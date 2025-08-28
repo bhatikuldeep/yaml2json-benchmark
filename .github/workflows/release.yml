@@ -1,0 +1,67 @@
+name: Build & Release Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        lang: [go, rust]
+
+    steps:
+      # Checkout repo
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      # Setup environment
+      - name: Set up ${{ matrix.lang }}
+        run: |
+          set -eux
+          if [ "${{ matrix.lang }}" = "go" ]; then
+            sudo apt update
+            sudo apt install golang-go -y
+          else
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+            source $HOME/.cargo/env
+          fi
+
+      # Build binary
+      - name: Build ${{ matrix.lang }} binary
+        run: |
+          set -eux
+          if [ "${{ matrix.lang }}" = "go" ]; then
+            cd go
+            go build -v -o yaml2json
+            ls -lah
+            cd ..
+          else
+            cd rust
+            cargo build --release
+            ls -lah target/release
+            cd ..
+          fi
+
+      # Prepare artifacts
+      - name: Prepare artifact
+        run: |
+          set -eux
+          mkdir -p artifacts
+          if [ "${{ matrix.lang }}" = "go" ]; then
+            cp go/yaml2json artifacts/yaml2json-go
+            sha256sum artifacts/yaml2json-go > artifacts/yaml2json-go.sha256
+          else
+            cp rust/target/release/yaml2json-rust artifacts/yaml2json-rust
+            sha256sum artifacts/yaml2json-rust > artifacts/yaml2json-rust.sha256
+          fi
+          ls -lah artifacts
+
+      # Upload artifact for review
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.lang }}-binary
+          path: artifacts/*
