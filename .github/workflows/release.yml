@@ -3,20 +3,17 @@ name: Build & Release Binaries
 on:
   push:
     tags:
-      - 'v*'  # triggers on version tags like v1.0.0
+      - 'v*' # triggers on version tags like v1.0.0
 
 permissions:
   contents: write
-  packages: write
 
 jobs:
   build-and-release:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
-        arch: [amd64]
-        # if you want native M1:
-        # arch: [amd64, arm64]
+        arch: [amd64, arm64] # support both Intel & Apple Silicon
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -41,8 +38,16 @@ jobs:
           cd go
           go mod tidy
           GOOS=$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')
+          case "$GOOS" in
+            macos)  GOOS=darwin ;;
+            windows) GOOS=windows ;;
+          esac
           GOARCH=${{ matrix.arch }}
-          go build -v -o ../yaml2json-go-${GOOS}-${GOARCH}
+          OUTPUT="../yaml2json-go-${GOOS}-${GOARCH}"
+          if [ "$GOOS" = "windows" ]; then
+            OUTPUT="${OUTPUT}.exe"
+          fi
+          go build -v -o "$OUTPUT"
           cd ..
 
       # 5. Build Rust binary
@@ -51,7 +56,17 @@ jobs:
           set -eux
           cd rust
           cargo build --release
-          cp target/release/yaml2json-rust ../yaml2json-rust-${{ runner.os }}-${{ matrix.arch }}
+          GOOS=$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')
+          case "$GOOS" in
+            macos)  GOOS=darwin ;;
+            windows) GOOS=windows ;;
+          esac
+          GOARCH=${{ matrix.arch }}
+          OUTPUT="../yaml2json-rust-${GOOS}-${GOARCH}"
+          if [ "$GOOS" = "windows" ]; then
+            OUTPUT="${OUTPUT}.exe"
+          fi
+          cp target/release/yaml2json-rust "$OUTPUT" || cp target/release/yaml2json-rust.exe "$OUTPUT"
           cd ..
 
       # 6. Prepare artifacts
@@ -59,9 +74,13 @@ jobs:
         run: |
           set -eux
           mkdir -p artifacts
-          mv yaml2json-go-* artifacts/
-          mv yaml2json-rust-* artifacts/
-          sha256sum artifacts/* > artifacts/checksums.txt || shasum -a 256 artifacts/* > artifacts/checksums.txt
+          mv yaml2json-go-* artifacts/ || true
+          mv yaml2json-rust-* artifacts/ || true
+          if command -v sha256sum > /dev/null; then
+            sha256sum artifacts/* > artifacts/checksums.txt
+          else
+            shasum -a 256 artifacts/* > artifacts/checksums.txt
+          fi
           ls -lah artifacts
 
       # 7. Create GitHub Release
@@ -69,13 +88,9 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
 
       # 8. Upload binaries to Release
       - name: Upload binaries to Release
         uses: softprops/action-gh-release@v1
         with:
           files: artifacts/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
