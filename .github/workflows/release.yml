@@ -11,26 +11,28 @@ permissions:
 
 jobs:
   build-and-release:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        arch: [amd64]
+        # if you want native M1:
+        # arch: [amd64, arm64]
+    runs-on: ${{ matrix.os }}
 
     steps:
       # 1. Checkout repo
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # 2. Setup Go
       - name: Setup Go
-        if: always()
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: 1.21
+          go-version: 1.22
 
       # 3. Setup Rust
       - name: Setup Rust
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          source $HOME/.cargo/env
-          rustup update stable
+        uses: dtolnay/rust-toolchain@stable
 
       # 4. Build Go binary
       - name: Build Go
@@ -38,8 +40,9 @@ jobs:
           set -eux
           cd go
           go mod tidy
-          go build -v -o yaml2json
-          ls -lah
+          GOOS=$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')
+          GOARCH=${{ matrix.arch }}
+          go build -v -o ../yaml2json-go-${GOOS}-${GOARCH}
           cd ..
 
       # 5. Build Rust binary
@@ -48,7 +51,7 @@ jobs:
           set -eux
           cd rust
           cargo build --release
-          ls -lah target/release
+          cp target/release/yaml2json-rust ../yaml2json-rust-${{ runner.os }}-${{ matrix.arch }}
           cd ..
 
       # 6. Prepare artifacts
@@ -56,15 +59,13 @@ jobs:
         run: |
           set -eux
           mkdir -p artifacts
-          cp go/yaml2json artifacts/yaml2json-go
-          cp rust/target/release/yaml2json-rust artifacts/yaml2json-rust
-          sha256sum artifacts/yaml2json-go > artifacts/yaml2json-go.sha256
-          sha256sum artifacts/yaml2json-rust > artifacts/yaml2json-rust.sha256
+          mv yaml2json-go-* artifacts/
+          mv yaml2json-rust-* artifacts/
+          sha256sum artifacts/* > artifacts/checksums.txt || shasum -a 256 artifacts/* > artifacts/checksums.txt
           ls -lah artifacts
 
       # 7. Create GitHub Release
       - name: Create GitHub Release
-        id: release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
