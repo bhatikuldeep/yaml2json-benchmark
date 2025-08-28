@@ -78,7 +78,9 @@ jobs:
           OUTPUT="../yaml2json-go-${{ matrix.go-os }}-${{ matrix.arch }}"
           
           echo "Building Go binary: GOOS=$GOOS GOARCH=$GOARCH"
-          GOOS=$GOOS GOARCH=$GOARCH go build -v -o "$OUTPUT"
+          
+          # Disable CGO for cross-compilation to avoid toolchain issues
+          CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -v -ldflags="-s -w" -o "$OUTPUT"
           
           if [ ! -f "$OUTPUT" ]; then
             echo "Go binary not found at $OUTPUT!"
@@ -87,6 +89,7 @@ jobs:
           
           echo "Go binary built successfully: $OUTPUT"
           ls -lah "$OUTPUT"
+          file "$OUTPUT"  # Check binary type
           cd ..
 
       # 7. Build Rust binary
