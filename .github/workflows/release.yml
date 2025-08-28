@@ -3,7 +3,7 @@ name: Build & Release Binaries
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 jobs:
   build:
@@ -61,7 +61,7 @@ jobs:
 
       # Upload artifact for review
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.lang }}-binary
           path: artifacts/*
