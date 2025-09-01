@@ -1,11 +1,45 @@
-use serde::{Deserialize};
-use serde_yaml::Value;
-use serde_json::{Value as JsonValue, to_writer};
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
+use serde_yaml::Value as YamlValue;
 use std::env;
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Write};
+use std::io::{BufReader, BufWriter};
 
-fn main() {
+/// Recursively convert YAML values to JSON-compatible values
+fn convert_node(node: &YamlValue) -> JsonValue {
+    match node {
+        YamlValue::Mapping(map) => {
+            let mut m = serde_json::Map::with_capacity(map.len());
+            for (k, v) in map {
+                // YAML keys must be strings for JSON, so stringify non-string keys
+                let key = match k {
+                    YamlValue::String(s) => s.clone(),
+                    other => format!("{:?}", other),
+                };
+                m.insert(key, convert_node(v));
+            }
+            JsonValue::Object(m)
+        }
+        YamlValue::Sequence(seq) => {
+            JsonValue::Array(seq.iter().map(convert_node).collect())
+        }
+        YamlValue::Null => JsonValue::Null,
+        YamlValue::Bool(b) => JsonValue::Bool(*b),
+        YamlValue::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                JsonValue::from(i)
+            } else if let Some(f) = n.as_f64() {
+                JsonValue::from(f)
+            } else {
+                JsonValue::Null
+            }
+        }
+        YamlValue::String(s) => JsonValue::String(s.clone()),
+        _ => JsonValue::Null,
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     if args.len() != 3 {
         eprintln!("Usage: yaml2json <input.yaml> <output.json>");
@@ -15,66 +49,22 @@ fn main() {
     let input_file = &args[1];
     let output_file = &args[2];
 
-    let file = File::open(input_file).expect("Cannot open input file");
-    let reader = BufReader::new(file);
+    let in_file = File::open(input_file)?;
+    let reader = BufReader::new(in_file);
 
-    let out_file = File::create(output_file).expect("Cannot create output file");
-    let mut writer = BufWriter::new(out_file);
+    let out_file = File::create(output_file)?;
+    let writer = BufWriter::new(out_file);
 
-    let stream = serde_yaml::Deserializer::from_reader(reader);
+    let mut encoder = serde_json::Serializer::pretty(writer);
 
-    // Write opening of JSON array
-    writer.write_all(b"[").expect("Failed to write JSON array start");
-
-    let mut first = true;
-    for doc in stream {
-        // Correctly deserialize each YAML document
-        let yaml_value: Value = Value::deserialize(doc).expect("Failed to parse YAML document");
-        let json_value: JsonValue = yaml_to_json(yaml_value);
-
-        if !first {
-            writer.write_all(b",").expect("Failed to write comma");
-        }
-        first = false;
-
-        // Write JSON object incrementally
-        to_writer(&mut writer, &json_value).expect("Failed to write JSON object");
+    // Stream through multiple YAML documents
+    let docs = serde_yaml::Deserializer::from_reader(reader);
+    for doc in docs {
+        let yaml_value: YamlValue = YamlValue::deserialize(doc)?;
+        let json_value = convert_node(&yaml_value);
+        json_value.serialize(&mut encoder)?;
     }
-
-    // Write closing of JSON array
-    writer.write_all(b"]").expect("Failed to write JSON array end");
-
-    writer.flush().expect("Failed to flush writer");
 
     println!("Conversion complete.");
-}
-
-fn yaml_to_json(value: Value) -> JsonValue {
-    match value {
-        Value::Null => JsonValue::Null,
-        Value::Bool(b) => JsonValue::Bool(b),
-        Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                JsonValue::from(i)
-            } else if let Some(f) = n.as_f64() {
-                JsonValue::from(f)
-            } else {
-                JsonValue::Null
-            }
-        }
-        Value::String(s) => JsonValue::String(s),
-        Value::Sequence(seq) => JsonValue::Array(seq.into_iter().map(yaml_to_json).collect()),
-        Value::Mapping(map) => {
-            let mut m = serde_json::Map::new();
-            for (k, v) in map {
-                let key = match k {
-                    Value::String(s) => s,
-                    other => format!("{:?}", other), // debug formatting instead of Display
-                };
-                m.insert(key, yaml_to_json(v));
-            }
-            JsonValue::Object(m)
-        }
-        _ => JsonValue::Null,
-    }
+    Ok(())
 }
