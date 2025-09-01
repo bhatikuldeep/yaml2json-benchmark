@@ -17,14 +17,14 @@ Many YAML→JSON conversions in CI/CD pipelines or data processing are slow or i
 
 | File Size | `yaml2json` (Go) | Python `pyyaml` |
 |-----------|------------------|-----------------|
-| 35 MB     | 0.08s           | 1.2s            |
-| 167 MB    | 0.35s           | 5.6s            |
+| 35 MB     | 2.72s            | 64.15s           |
+| 167 MB    | 12.88s           | 336.05s          |
 
 *Tested on MacBook M1; Go version keeps processing memory efficient.*
 
 ## Installation
 
-Download the latest release for your OS/architecture from the [Releases](https://github.com/your-username/yaml2json/releases) page.
+Download the latest release for your OS/architecture from the [Releases](https://github.com/bhatikuldeep/yaml2json-benchmark/releases) page.
 
 ```bash
 # Make it executable
@@ -38,7 +38,7 @@ chmod +x yaml2json-darwin-arm64
 ./yaml2json-darwin-arm64 <input.yaml> <output.json>
 
 # Example
-./yaml2json-darwin-arm64 kong35.yml kong.json
+./yaml2json-darwin-arm64 input.yml input.json
 ```
 
 **Output:** `output.json` will contain all YAML documents as JSON objects, maintaining values as-is.
@@ -48,7 +48,3 @@ chmod +x yaml2json-darwin-arm64
 * **Faster:** Optimized Go implementation handles large YAML files quickly.
 * **Reliable:** Preserves original YAML values without unwanted type conversions.
 * **Portable:** Multi-platform binaries with single executable.
-
-## Contributing
-
-Issues and pull requests are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
