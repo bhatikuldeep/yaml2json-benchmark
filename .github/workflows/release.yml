@@ -1,8 +1,9 @@
 name: Build & Release Binaries
+
 on:
   push:
     tags:
-      - 'v*'  # triggers on version tags like v1.0.0
+      - "v*" # triggers on version tags like v1.0.0
 
 permissions:
   contents: write
@@ -16,25 +17,21 @@ jobs:
             arch: amd64
             go-os: linux
             go-arch: amd64
-            rust-target: x86_64-unknown-linux-gnu
           - os: ubuntu-latest
             arch: arm64
             go-os: linux
             go-arch: arm64
-            rust-target: aarch64-unknown-linux-gnu
           - os: macos-latest
             arch: amd64
             go-os: darwin
             go-arch: amd64
-            rust-target: x86_64-apple-darwin
           - os: macos-latest
             arch: arm64
             go-os: darwin
             go-arch: arm64
-            rust-target: aarch64-apple-darwin
-    
+
     runs-on: ${{ matrix.os }}
-    
+
     steps:
       # 1. Checkout repo
       - name: Checkout repo
@@ -44,87 +41,39 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: "1.22"
 
-      # 3. Setup Rust
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      # 4. Install cross-compilation dependencies
-      - name: Install cross-compilation tools
-        run: |
-          set -eux
-          if [ "${{ matrix.os }}" = "ubuntu-latest" ] && [ "${{ matrix.arch }}" = "arm64" ]; then
-            sudo apt-get update
-            sudo apt-get install -y gcc-aarch64-linux-gnu
-            echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-          fi
-
-      # 5. Add Rust targets
-      - name: Add Rust cross-compilation targets
-        run: |
-          rustup target add ${{ matrix.rust-target }}
-
-      # 6. Build Go binary
+      # 3. Build Go binary
       - name: Build Go binary
         run: |
           set -eux
           cd go
           go mod tidy
-          
+
           GOOS=${{ matrix.go-os }}
           GOARCH=${{ matrix.go-arch }}
-          OUTPUT="../yaml2json-go-${{ matrix.go-os }}-${{ matrix.arch }}"
-          
+          OUTPUT="../yaml2json-${{ matrix.go-os }}-${{ matrix.arch }}"
+
           echo "Building Go binary: GOOS=$GOOS GOARCH=$GOARCH"
-          
-          # Disable CGO for cross-compilation to avoid toolchain issues
           CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -v -ldflags="-s -w" -o "$OUTPUT"
-          
+
           if [ ! -f "$OUTPUT" ]; then
             echo "Go binary not found at $OUTPUT!"
             exit 1
           fi
-          
+
           echo "Go binary built successfully: $OUTPUT"
           ls -lah "$OUTPUT"
-          file "$OUTPUT"  # Check binary type
+          file "$OUTPUT"
           cd ..
 
-      # 7. Build Rust binary
-      - name: Build Rust binary
-        run: |
-          set -eux
-          cd rust
-          
-          echo "Building Rust binary for target: ${{ matrix.rust-target }}"
-          cargo build --release --target "${{ matrix.rust-target }}"
-          
-          SOURCE_PATH="target/${{ matrix.rust-target }}/release/yaml2json-rust"
-          OUTPUT="../yaml2json-rust-${{ matrix.go-os }}-${{ matrix.arch }}"
-          
-          if [ ! -f "$SOURCE_PATH" ]; then
-            echo "Rust binary not found at $SOURCE_PATH!"
-            exit 1
-          fi
-          
-          cp "$SOURCE_PATH" "$OUTPUT"
-          echo "Rust binary built successfully: $OUTPUT"
-          ls -lah "$OUTPUT"
-          cd ..
-
-      # 8. Prepare artifacts
+      # 4. Prepare artifacts
       - name: Prepare artifacts
         run: |
           set -eux
           mkdir -p artifacts
-          
-          # Move binaries to artifacts directory
-          mv yaml2json-go-* artifacts/ 2>/dev/null || echo "No Go binaries to move"
-          mv yaml2json-rust-* artifacts/ 2>/dev/null || echo "No Rust binaries to move"
-          
-          # Generate checksums
+          mv yaml2json-* artifacts/
+
           cd artifacts
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum * > checksums.txt
@@ -134,19 +83,19 @@ jobs:
             echo "No checksum utility found"
             exit 1
           fi
-          
+
           echo "Artifacts prepared:"
           ls -lah
           cat checksums.txt
 
-      # 9. Upload artifacts (for debugging)
+      # 5. Upload artifacts (optional, for debugging)
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: binaries-${{ matrix.go-os }}-${{ matrix.arch }}
           path: artifacts/*
 
-      # 10. Create GitHub Release and upload binaries
+      # 6. Create GitHub Release
       - name: Create Release and Upload Binaries
         uses: softprops/action-gh-release@v2
         with:
